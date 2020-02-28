@@ -1,0 +1,33 @@
+<html>
+    <head>
+        <link rel = "stylesheet" href = "bootstrap.min.css">
+    </head>
+    <body>
+        <p style = "text-align: center; font-size: 36px;">Welcome <%=loggedInComedian%></p>
+        <hr>
+        <div class = "container">
+            <% if(videos.length == 0) { %>
+                <p>Please Wait till we test your video , Your tested videos will be displayed here shortly.</p>
+           <% }  else { %>
+                <div class = "row">
+                    <%videos.forEach(function(video){ %>
+                        <div class = "col-xs-4">
+                            <img src = "<%=video.thNail%>" style = "width:300px; height:400px;">
+                        </div>
+                        <div class = "col-xs-4">
+                            <img src = "<%=video.tsURL%>" style = "width:300px; height:400px;">
+                            <br>
+                            <p style = "text-align: center;">Detailed Time Stamps</p>
+                        </div>
+                        <div class = "col-xs-4">
+                            <img src = "<%=video.cpURL%>" style = "width: 300px; height:400px;">
+                            <br>
+                            <p style = "text-align : center;">Detailed Counter Plot</p>
+                        </div>
+                     <% }); %>
+                </div>
+           <% } %>
+         
+        </div>
+    </body>
+</html>

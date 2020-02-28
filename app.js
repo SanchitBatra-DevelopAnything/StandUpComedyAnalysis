@@ -5,6 +5,15 @@ const ejs = require("ejs");
 const spawn = cp.spawn;
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
+
+var passport = require("passport");
+var LocalStrategy = require("passport-local");
+var passportLocalMongoose = require("passport-local-mongoose");
+
+var Comedian = require("./models/comedian");
+
+var currentTestingVideoId = '';
+
 mongoose.connect("mongodb://localhost/fyp");
 
 const app = express();
@@ -12,6 +21,23 @@ const app = express();
 app.use(bodyParser.json()); 
 app.use(express.static('public'));
 app.use(bodyParser.urlencoded({extended:true}));
+
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.use(new LocalStrategy(Comedian.authenticate()));
+passport.serializeUser(Comedian.serializeUser());
+passport.deserializeUser(Comedian.deserializeUser());
+
+app.use(require("express-session")({
+    secret : "Sanchit is such a good developer",
+    resave : false,
+    saveUninitialized : false
+}));
+
+
+
 
 function videoIdGenerator(link)
 {
@@ -46,7 +72,13 @@ function getSelectedVideo(identity)
 
 function getPendingVideos()
 {
-  return pendingVideo.find();
+  //return pendingVideo.find();
+  Promise.all([
+    pendingVideo.find({'tsURL': ''}).exec(),
+    AccountModel.find({'cpURL': ''}).exec(),
+  ]).then(filteredVideos => {
+    return filteredVideos;
+  }).catch(err=>console.log("Error getting pendingVideos"));
 }
 
 
@@ -60,6 +92,8 @@ var pendingVideosSchema = new mongoose.Schema({
     thNail : String,
     vid :String,
     title : String,
+    tsURL : String, 
+    cpURL : String
 });
 
 var pendingVideo = mongoose.model("pendingVideo",pendingVideosSchema);
@@ -96,6 +130,12 @@ app.get("/comedianLogin",function(req,res)
     res.render("comedianLogin.ejs");
 });
 
+app.post("/comedianLogin",passport.authenticate("local" , {
+    successRedirect : "/comedianForm",
+    failureRedirect : "/comedianLogin"}),function(req,res){
+    });
+
+
 app.get("/userSignUp",function(req,res)
 {
     res.render("userSignUp.ejs");
@@ -103,13 +143,27 @@ app.get("/userSignUp",function(req,res)
 
 app.get("/comedianSignUp",function(req,res)
 {
-    res.render("comedianSignUp.ejs");
+    res.render("comedianSignup.ejs");
+});
+
+app.post("/comedianSignUp",function(req,res){
+    //all signUp logic handling.
+    //res.send("regsteration");
+    Comedian.register(new Comedian({username : req.body.username , email : req.body.email}) , req.body.password , function(err,comedian){
+        if(err){
+            console.log(err+"maa k choot");
+            return res.render("/comedianSignUp");
+        }
+        passport.authenticate("local")(req,res,function(){
+            res.redirect("/comedianLogin");
+        });
+    });
 });
 
 app.post("/tester/pendingWork",function(req,res)
 {
     var Tid = req.body.testerID;
-    pendingVideo.find({},function(err,allVideos)
+    pendingVideo.find({'tsURL' : '' , 'cpURL' : ''},function(err,allVideos)
     {
         if(err)
         {
@@ -134,7 +188,7 @@ app.post("/comedian/dataUploaded",function(req,res)
     var title = req.body.title;
     var videoId = videoIdGenerator(link);
     var thumbNail = getThumbnail(videoId);
-    var videoToDb = new pendingVideo({comedian : comedian , link: link,title : title,vid : videoId, thNail : thumbNail});
+    var videoToDb = new pendingVideo({comedian : comedian , link: link,title : title,vid : videoId, thNail : thumbNail,tsURL : '', cpURL : ''});
     videoToDb.save(function(err,video)
     {
         if(err)
@@ -147,7 +201,7 @@ app.post("/comedian/dataUploaded",function(req,res)
         else
         {
             var heading = "Thanks , We have received your data";
-            var message = "This page is just an acknowledgement that your data has been uploaded to our servers , Soon we will get back to you with the feedback on your video from our qualified testers<br>Thanks for connecting with hasee to phasi";
+            var message = "This page is just an acknowledgement that your data has been uploaded to our servers , Soon we will get back to you with the feedback on your video through Email from our qualified testers , Thanks for connecting with hasee to phasee";
             console.log("succesfull upload",video);
             res.render("comedianDataUploaded.ejs",{heading : heading , message : message});
         }
@@ -162,6 +216,7 @@ app.get("/user/:userName/topVideos",function(req,res)
 app.get("/predict/:vidID", function(req,res)
 {
     var vid = req.params.vidID;
+    currentTestingVideoId = req.params.vidID;
     pendingVideo.findById(vid,function(err,foundVideo)
     {
         if(err)
@@ -182,47 +237,22 @@ app.get("/predict/:vidID", function(req,res)
 
 
 app.post("/postReaction", function (req, res) {
-    var vidID = req.body.id;
-    var reactions = req.body.reactions;
-    var timestamps = req.body.timestamps;
-    console.log(reactions);
-    res.end('abc');
-    var emotions = [
-    {emotion: "happy"   , count: 0},
-    {emotion: "neutral" , count: 0},
-    {emotion: "fear"    , count: 0},
-    {emotion: "surprise", count: 0},
-    {emotion: "angry"   , count: 0},
-    {emotion: "disgust" , count: 0},
-    {emotion: "sad"     , count: 0}
-     ];
-    reactions.forEach(function(reaction) {
-        if(reaction === "happy")
-            emotions[0].count++;
-        else if (reaction === "neutral")
-            emotions[1].count++;
-        else if (reaction === "fear")
-            emotions[2].count++;
-        else if (reaction === "surprise")
-            emotions[3].count++;
-        else if (reaction === "angry")
-            emotions[4].count++;
-        else if (reaction === "disgust")
-            emotions[5].count++;
-        else if (reaction === "sad")
-            emotions[6].count++;
-    });
+   var data = req.body;
+   var tsURL = data.tsURL;
+   var cpURL = data.cpURL;
+   console.log(tsURL);
 
-    var maxEmotion = {};
-    var max_count = 0;
-    emotions.forEach(function(emotion){
-        if(emotion.count > max_count)
-        {
-            max_count = emotion.count;
-            maxEmotion = emotion;
-        }
-    });
-    console.log("Maximum reaction received is : "+maxEmotion.emotion);
+   if(currentTestingVideoId!=''){
+        pendingVideo.findById(currentTestingVideoId).then(foundVideo => {
+            foundVideo.tsURL = tsURL;
+            foundVideo.cpURL = cpURL;
+
+            return foundVideo.save()
+        }).then(result=>{
+            console.log("DONE TESTING!");
+        }).catch(err=>console.log(err));
+   }
+
 });
 
 app.get("user/forgotPassword",function(req,res)
@@ -234,6 +264,25 @@ app.get("comedian/forgotPassword",function(req,res)
     res.render("comedianForgot.ejs");
 });
 
+app.get("/logout",function(req,res){
+    req.logout();
+    res.redirect("/");
+});
+
+app.post("/giveReview",function(req,res){
+    var loggedInComedian = req.session.passport.user;
+    pendingVideo.find({'comedian' : loggedInComedian , 'tsURL' : {$ne : ''}},function(err,reviewedVideosOfThisComedian)
+    {
+        if(err)
+        {
+            res.send("Error on internet connection");
+        }
+        else
+        {
+            res.render("ReviewAnalysis.ejs",{videos : reviewedVideosOfThisComedian , loggedInComedian : loggedInComedian});
+        }
+    });
+});
 
 app.listen(3000,function()
 {
